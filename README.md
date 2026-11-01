@@ -6,6 +6,8 @@ RoadGuard records journeys to USB storage and lets paired phones and a Windows c
 
 **Current development release · 0.7.0-alpha · Android 6.0+ · Windows companion**
 
+Read the [complete feature and architecture guide](docs/FEATURES.md) for automatic hardware selection, Android-version behavior, every application module, operating limits and troubleshooting.
+
 RoadGuard is an open-source project that can reduce the need to buy a separate dashcam when a compatible Android head unit, UVC webcam and USB drive are already available. Original RoadGuard code is available under Apache License 2.0. The current application has no implemented subscription or cloud-storage billing requirement. Hardware, electricity, internet/mobile data and any third-party network service remain separate costs. Camera quality, stereo performance and USB compatibility determine the result.
 
 ## What you can do
@@ -53,6 +55,25 @@ Car and phone use the same APK with different roles. On the same hotspot or Wi-F
 - Local recording and image adjustment continue without an internet connection once the camera and storage are ready.
 
 This can make basic dashcam recording affordable without purchasing a complete dedicated camera system. Dedicated automotive cameras may offer capabilities that this setup cannot reproduce, including purpose-designed optics, heat tolerance, parking power management and hardware-backed night imaging. RoadGuard's alpha release needs testing with each hardware combination before relying on its recordings.
+
+## Automatic adaptation to your Android hardware
+
+One APK packages native libraries for **32-bit ARM, 64-bit ARM, x86 and x86-64**. Android selects the compatible ABI when installing and loading the app. RoadGuard then chooses a camera/encoder quality profile using the device's reported capabilities and current available resources. Android API checks select supported operating-system behavior.
+
+The quality planner reads total RAM, available RAM, CPU core count, Android low-memory state, thermal status where available, and advertised hardware H.264 encoding support at 30 FPS. The initial ceilings are evaluated in this order. Memory figures below are MiB as calculated by the implementation.
+
+| Device conditions | Initial resolution ceiling |
+| --- | --- |
+| Low-memory warning, severe thermal status, or less than 256 MiB currently available | 640 × 480 |
+| At least 3500 MiB total RAM, 768 MiB available, 4 cores and advertised hardware 1080p/30 surface-input encoding | 1920 × 1080 |
+| At least 1500 MiB total RAM, 384 MiB available, 2 cores and advertised hardware 720p/30 surface-input encoding | 1280 × 720 |
+| Remaining devices | 640 × 480 |
+
+The camera's advertised sizes can lower the result. The ordered candidates use MJPEG, with a final 640 × 480 YUYV fallback. Encoder startup tries 30 FPS and then 15 FPS, plus alternative advertised codecs when needed. Available memory means memory free for use at that moment, so applications already running on the stereo can affect the choice.
+
+After a 30-second warm-up, 20 consecutive seconds of low preview FPS, Android low-memory state or severe thermal pressure can lower a higher-resolution profile. After at least 60 seconds without current pressure and with video fragments committed, the selected profile can be remembered for that firmware, camera and candidate list. **RETEST AUTO QUALITY (STOP FIRST)** clears that learned preference.
+
+This gives older hardware a lighter starting configuration and allows capable devices to try higher quality. These are bounded heuristics with fallbacks. They select a workable configuration to test rather than guaranteeing the mathematically best setting. The current session does not continually step quality upward. Actual resolution and preview FPS are shown in the app. The [detailed adaptation guide](docs/FEATURES.md#automatic-hardware-and-version-selection) explains the sequence and its limits.
 
 ## Watch live on your phone and PC
 
