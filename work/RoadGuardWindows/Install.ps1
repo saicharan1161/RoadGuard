@@ -8,6 +8,11 @@ if(-not $admin) {
 }
 try {
     if([System.Windows.Forms.MessageBox]::Show("Install RoadGuard Windows?`n`nThis installs a background server at Windows boot and opens the dashboard when you sign in. It adds a firewall rule limited to local/private VPN IPv4 networks. Backups start OFF. No public router port is opened.`n`nOnly continue using the Windows account that should own this installation.",'RoadGuard setup','YesNo') -ne 'Yes') {exit}
+    if (-not ((Test-Path -LiteralPath (Join-Path $PSScriptRoot 'ffplay.exe')) -and
+              (Test-Path -LiteralPath (Join-Path $PSScriptRoot 'ffmpeg.exe')) -and
+              (Test-Path -LiteralPath (Join-Path $PSScriptRoot 'ffprobe.exe')))) {
+        & (Join-Path $PSScriptRoot 'Get-MediaTools.ps1')
+    }
     $installDir=Join-Path $env:ProgramFiles 'RoadGuard'
     $dataDir=Join-Path $env:ProgramData 'RoadGuard'
     New-Item -ItemType Directory -Path $installDir,$dataDir -Force | Out-Null

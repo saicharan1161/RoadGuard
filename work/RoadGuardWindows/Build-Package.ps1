@@ -14,7 +14,7 @@ $badging=& $aapt dump badging $apk
 if($LASTEXITCODE -ne 0 -or -not ($badging | Select-String -SimpleMatch "versionName='$($release.version)'")){throw 'APK version differs from release.json; build APK first'}
 $stage=Join-Path $PSScriptRoot ('../windows-package-'+[guid]::NewGuid())
 New-Item -ItemType Directory -Path $stage | Out-Null
-foreach($name in @('RoadGuardDashboard.exe','server.cjs','map-server.cjs','release.json','README.md','THIRD-PARTY.md','Setup.cmd','Install.ps1','Uninstall.ps1')){
+foreach($name in @('RoadGuardDashboard.exe','server.cjs','map-server.cjs','release.json','README.md','THIRD-PARTY.md','Setup.cmd','Install.ps1','Get-MediaTools.ps1','Uninstall.ps1')){
     Copy-Item -LiteralPath (Join-Path $PSScriptRoot $name) -Destination $stage
 }
 Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'live-map') -Destination $stage -Recurse

@@ -6,6 +6,10 @@ RoadGuard records journeys to USB storage and lets paired phones and a Windows c
 
 **Current development release · 0.7.1-alpha · Android 6.0+ · Windows companion**
 
+**[Download APK, Windows installer and USB starter](https://github.com/saicharan1161/RoadGuard/releases/tag/v0.7.1-alpha)**
+
+Use the same APK on car and phone. Extract the public Windows ZIP and run `Setup.cmd`; first-time installation downloads approximately 115 MB of verified media tools from their provider. The USB starter contains the APK, Windows package and guides. It does not autorun on Android or contain recordings. These are development-signed alpha builds; test your hardware before relying on recordings.
+
 Version 0.7.1 improves reconnection and concurrent viewing. PC status checks continue during backups, paired LAN cars can be rediscovered after an address change, phone downloads retry temporary interruptions, and the Windows recording list offers a selected-video save action. Install matching car, phone and Windows versions. See the [0.7.1 update guide](outputs/RoadGuard-0.7.1-Guide.md).
 
 Read the [complete feature and architecture guide](docs/FEATURES.md) for automatic hardware selection, Android-version behavior, every application module, operating limits and troubleshooting.
