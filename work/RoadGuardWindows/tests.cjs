@@ -6,16 +6,20 @@ const pfx=fs.readFileSync(path.join(dir,'server.pfx')),pin=hash(fs.readFileSync(
 const admin='a'.repeat(64),id='b'.repeat(64),video=process.env.RG_TEST_VIDEO?fs.readFileSync(process.env.RG_TEST_VIDEO):Buffer.from('sample-video-for-range-tests');
 let backupHeader='';
 let validVersion=true,carAvailable=true,cutBackup=false,lastRange='',videoCalls=0,locationRefreshes=0,holdLive=false,handshakes=0;
+let secondClip=false,heldTransfer=null,identityRequests=0;
 const json=(res,code,data)=>{res.writeHead(code,{'Content-Type':'application/json'});res.end(JSON.stringify(data));};
 async function main() {
  assert(allowed('::ffff:100.80.1.2'));assert(!allowed('8.8.8.8'));assert.throws(()=>endpoint('localhost'));assert.throws(()=>endpoint('8.8.8.8'));
  fs.writeFileSync(path.join(dir,'config.json'),JSON.stringify({testMode:true,pfxPassword:'test-only-password',adminToken:admin,bind:'127.0.0.1',port:18944,phones:[]}));
  const fake=https.createServer({pfx,passphrase:'test-only-password'},(req,res)=>{
   if(!carAvailable)return json(res,503,{error:'Simulated car offline'});
-  if(req.url==='/identity')return json(res,200,{app:validVersion?version:'wrong',kind:'car'});
+  if(req.url==='/identity'){identityRequests++;return json(res,200,{app:validVersion?version:'wrong',kind:'car'});}
   if(req.url==='/pair')return json(res,200,{token:'c'.repeat(64)});
   if(req.headers.authorization!=='Bearer '+'c'.repeat(64))return json(res,401,{});
-  if(req.url==='/recordings')return json(res,200,{camera:'Test camera',status:'Recording',recordings:[{id,name:'2026-10-20_Tuesday_10-00-00-001.mp4',bytes:video.length,modified:1000,active:false}]});
+  if(req.url==='/recordings'){
+    const first={id,name:'2026-10-20_Tuesday_10-00-00-001.mp4',bytes:video.length,modified:1000,active:false};
+    return json(res,200,{camera:'Test camera',status:'Recording',recordings:secondClip?[first,{...first,id:'d'.repeat(64),name:'2026-10-21_Wednesday_10-00-00-001.mp4'}]:[first]});
+  }
   if(req.url.startsWith('/location')) {
    if(req.url==='/location?refresh=1')locationRefreshes++;
    return json(res,200,{enabled:true,latitude:12.3,longitude:77.5,ageMs:0,fresh:true,accuracyMeters:8,place:'Test district',message:'Current GPS fix'});
@@ -26,6 +30,7 @@ async function main() {
    let begin=0,end=video.length-1;
    if(lastRange){const m=/bytes=(\d+)-(\d*)/.exec(lastRange);begin=Number(m[1]);if(m[2])end=Number(m[2]);}
    res.writeHead(lastRange?206:200,{'Content-Type':'video/mp4','Content-Length':end-begin+1,...(lastRange?{'Content-Range':`bytes ${begin}-${end}/${video.length}`}:{})});
+   if(secondClip&&req.url.endsWith('d'.repeat(64))){res.flushHeaders();heldTransfer=res;return;}
    if(cutBackup){cutBackup=false;res.write(video.subarray(begin,begin+4));setTimeout(()=>res.destroy(),30);return;}
    return res.end(video.subarray(begin,end+1));
   }
@@ -69,16 +74,18 @@ async function main() {
   await call('/admin/backup-now',{});
   assert.match((await call('/admin/status')).json().backupMessage,/paused.*live/i);
   assert.equal(videoCalls,beforeLiveBackup,'Live view must prevent backup bandwidth competition');
-  held.destroy();holdLive=false;await new Promise(resolve=>setTimeout(resolve,80));
   cutBackup=true;
-  await call('/admin/backup-now',{});
+  const phoneLive=await new Promise((resolve,reject)=>{https.get({host:'127.0.0.1',port:18944,path:'/live.avc',rejectUnauthorized:false,agent:false,headers:{Authorization:'Bearer '+token}},resolve).on('error',reject);});
+  assert.equal(phoneLive.statusCode,200);phoneLive.on('error',()=>{});phoneLive.resume();
+  assert.equal((await call('/admin/save-clip',{id})).status,202);
   await new Promise(r=>setTimeout(r,250));
   let status=(await call('/admin/status')).json();assert.equal(status.backups.length,0);
-  await call('/admin/backup-now',{});
+  assert.equal((await call('/admin/save-clip',{id})).status,202);
   await new Promise(r=>setTimeout(r,350));
   status=(await call('/admin/status')).json();assert.equal(status.backups.length,1);assert.equal(lastRange,'bytes=4-');
   assert.equal(backupHeader,'1','Background reads must use the car pacing path');
   assert.deepEqual(fs.readFileSync(path.join(dir,status.backups[0].file)),video);
+  held.destroy();phoneLive.destroy();holdLive=false;
   const callsBefore=videoCalls;
   r=await call('/video?id='+id,null,token,{Range:'bytes=5-9'});assert.deepEqual(r.data,video.subarray(5,10));assert.equal(videoCalls,callsBefore);
   assert.equal((await call('/video?id='+id,null,token,{Range:`bytes=${video.length+999}-`})).status,416);
@@ -99,13 +106,36 @@ async function main() {
   await call('/location?refresh=1',null,token);assert.equal(locationRefreshes,refreshesBefore+2);
   assert.equal((await call('/recordings',null,token,{'X-RoadGuard-App':'old'})).status,409);
   const stopped=new Promise(resolve=>app.server.once('close',resolve));app.close();await stopped;
-  app=await start(dir);
+  const configPath=path.join(dir,'config.json');
+  const moved=JSON.parse(fs.readFileSync(configPath));
+  const localIp=Object.values(require('node:os').networkInterfaces()).flat().find(n=>n.family==='IPv4'&&!n.internal&&allowed(n.address)&&!n.address.startsWith('100.'));
+  moved.car.host=localIp?localIp.address:'127.0.0.1:8944';fs.writeFileSync(configPath,JSON.stringify(moved));
+  app=await start(dir,200);
+  const beacon=require('node:dgram').createSocket('udp4');
+  try {
+    for(let attempt=0;attempt<30;attempt++) {
+      const info=(await call('/admin/status')).json();
+      if(info.online)break;
+      await new Promise((done,fail)=>beacon.send(Buffer.from('ROADGUARD-CAR-1'),8944,'127.0.0.1',e=>e?fail(e):done()));
+      await new Promise(done=>setTimeout(done,100));
+    }
+  } finally{beacon.close();}
+  assert.equal((await call('/admin/status')).json().car.host,'127.0.0.1','Recover previously pinned car at its new LAN address');
   for(let attempt=0;attempt<30;attempt++) {
    if((await call('/admin/status')).json().online)break;
    await new Promise(resolve=>setTimeout(resolve,100));
   }
   assert.equal((await call('/admin/status')).json().online,true,'Saved car must reconnect after server restart');
   assert.equal((await call('/recordings',null,token)).status,200,'Saved phone token must survive server restart');
+  secondClip=true;
+  await call('/admin/backup-settings',{enabled:true,gb:1});
+  for(let i=0;i<30&&!heldTransfer;i++)await new Promise(done=>setTimeout(done,50));
+  assert(heldTransfer,'Automatic backup must be running');
+  const pollsDuringTransfer=identityRequests;
+  await new Promise(done=>setTimeout(done,700));
+  assert(identityRequests>pollsDuringTransfer,'Health checks must continue during an automatic backup');
+  heldTransfer.end(video);secondClip=false;
+  await call('/admin/backup-settings',{enabled:false,gb:1});
   if(process.env.RG_HOLD_UI_TEST==='1') {
     console.log('UI fixture ready: '+dir);
     await new Promise(()=>{});

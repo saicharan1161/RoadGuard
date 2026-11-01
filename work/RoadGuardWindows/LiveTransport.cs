@@ -5,6 +5,7 @@ using System.IO;
 // No transcoding, no saved-video changes. MPEG-TS video PID 256, PMT PID 4096.
 public sealed class LiveTransport {
     readonly Stream output;
+    readonly byte[] packet=new byte[188];
     readonly int[] continuity=new int[8192];
     byte[] config=new byte[0];
     bool waitingKey=true,discontinuity=true;
@@ -47,7 +48,7 @@ public sealed class LiveTransport {
     void Pack(int pid,byte[] data,bool start,long clock,bool key) {
         int pos=0;bool first=true;
         while(pos<data.Length) {
-            byte[] packet=new byte[188];for(int i=0;i<packet.Length;i++)packet[i]=255;
+            for(int i=0;i<packet.Length;i++)packet[i]=255;
             packet[0]=0x47;packet[1]=(byte)((pid>>8)|(first&&start?0x40:0));packet[2]=(byte)pid;
             bool pcr=first&&clock>=0;int count=Math.Min(pcr?176:184,data.Length-pos);
             bool adapt=pcr||count<184;

@@ -8,6 +8,23 @@ import javax.net.ssl.SSLException
 
 /** Explicitly paired routes only. Fallback never crosses car identities or retries mutations. */
 object PhoneRoutes {
+    /** Hotspot DHCP may change the IP. Only the previously pinned car may replace it. */
+    fun recoverCarAddress(context:Context,ip:String):Boolean {
+        val prefs=context.getSharedPreferences("connection",Context.MODE_PRIVATE)
+        val host=prefs.getString("host",null) ?: return false
+        val pin=prefs.getString("pin",null) ?: return false
+        if(host.endsWith(":8944") || host==ip || prefs.getString("token",null)==null)return false
+        val probe=LinkSecurity.connect(ip,"/identity",pin)
+        try {
+            if(probe.responseCode!=200)return false
+            val identity=JSONObject(probe.inputStream.bufferedReader().use { it.readText() })
+            val version=context.packageManager.getPackageInfo(context.packageName,0).versionName
+            if(identity.optString("kind")!="car" || identity.optString("app")!=version)return false
+            if(prefs.getString("pin",null)!=pin || prefs.getString("host",null)!=host)return false
+            prefs.edit().putString("host",ip).apply()
+            return true
+        } finally {probe.disconnect()}
+    }
     fun remember(context:Context,host:String,pin:String,token:String,carPin:String) {
         val prefs=context.getSharedPreferences("connection",Context.MODE_PRIVATE)
         val old=JSONArray(prefs.getString("routes","[]"))

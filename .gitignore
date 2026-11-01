@@ -13,6 +13,7 @@
 /outputs/*
 !/outputs/RoadGuard-0.7.0-Guide.md
 !/outputs/RoadGuard-0.7.0-Validation.md
+!/outputs/RoadGuard-0.7.1-Guide.md
 
 # Generated builds, local tools and machine configuration.
 **/build/

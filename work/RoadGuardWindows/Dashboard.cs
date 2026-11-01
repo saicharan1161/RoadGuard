@@ -67,6 +67,16 @@ class Dashboard : Form {
         grid.BackgroundColor=Color.FromArgb(24,38,55);grid.DefaultCellStyle.ForeColor=Color.Black;
         grid.Columns.Add("date","Recording (car clock)");grid.Columns.Add("size","Size MB");grid.Columns.Add("status","State / PC copy");
         main.Controls.Add(grid);
+        var menu=new ContextMenuStrip();
+        menu.Items.Add("Save this recording to PC",null,async(s,e)=>{
+            var row=grid.CurrentRow;
+            if(row==null||!(row.Cells[0].Tag is string))return;
+            try {await Api("/admin/save-clip",new {id=(string)row.Cells[0].Tag});backupState.Text="Saving the selected recording…";}
+            catch(Exception ex){MessageBox.Show(ex.Message,"Save recording");}
+        });
+        grid.CellMouseDown+=(s,e)=>{if(e.Button==MouseButtons.Right&&e.RowIndex>=0)grid.CurrentCell=grid.Rows[e.RowIndex].Cells[0];};
+        grid.ContextMenuStrip=menu;
+        menu.Opening+=(s,e)=>{e.Cancel=grid.CurrentRow==null||!(grid.CurrentRow.Cells[0].Tag is string);};
         backupState.Dock=DockStyle.Fill;main.Controls.Add(backupState);
         Controls.Add(main);
         grid.CellDoubleClick+=(s,e)=> {if(e.RowIndex>=0 && grid.Rows[e.RowIndex].Tag is string) {
@@ -121,7 +131,7 @@ class Dashboard : Form {
                 autoLiveAttempted=true;
                 try {StartLive();}catch(Exception ex){state.Text+="\nAuto live unavailable: "+ex.Message;}
             }
-            backupState.Text="Backup: "+s["backupMessage"]+"   •   Double-click a PC copy to play. Mobile data charges can apply.";
+            backupState.Text="Backup: "+s["backupMessage"]+"   •   Right-click a finished recording to save it. Double-click a PC copy to play.";
             if(!settingsLoaded) {auto.Checked=(bool)s["backupEnabled"];budget.Value=Convert.ToDecimal(s["backupGB"]);settingsLoaded=true;}
             var loc=s["location"] as Dictionary<string,object>;
             lat=null;lon=null;
@@ -131,6 +141,7 @@ class Dashboard : Form {
                 bool fresh=online&&age<=30000&&loc.ContainsKey("fresh")&&(bool)loc["fresh"];
                 location.Text=(test?"SIMULATED LOCATION":fresh?"CURRENT LOCATION":"LAST KNOWN • NOT LIVE")+"  ·  "+Math.Max(0,age/1000)+" seconds old\nLatitude: "+lat+"   Longitude: "+lon+"   Accuracy: ±"+loc["accuracyMeters"]+" m\n"+loc["place"]+"\n"+(fresh&&loc.ContainsKey("message")?loc["message"]:"Waiting for a confirmed fresh position")+"\nUpdates every 15 seconds; Refresh requests a fresh fix (may take time).";
             } else location.Text=loc!=null&&loc.ContainsKey("message")?(string)loc["message"]:"Location unavailable. Enable GPS sharing in the car settings.";
+            if(grid.ContextMenuStrip.Visible)return;
             grid.Rows.Clear();
             var copies=(System.Collections.IEnumerable)s["backups"];
             timelineCopies=copies;var timelineCar=s["car"] as Dictionary<string,object>;timelinePin=timelineCar==null?"":(string)timelineCar["pin"];
@@ -140,6 +151,7 @@ class Dashboard : Form {
                 foreach(Dictionary<string,object> copy in copies)if((string)copy["id"]==(string)c["id"]&&car!=null&&(string)copy["carPin"]==(string)car["pin"])saved=copy;
                 int i=grid.Rows.Add(c["name"],(Convert.ToDouble(c["bytes"])/1048576).ToString("F1"),(bool)c["active"]?(online?"Recording now":"Last seen recording • unconfirmed"):saved!=null?"PC backup ✓":"On car USB");
                 if(saved!=null)grid.Rows[i].Tag=saved["file"];
+                else if(online&&!(bool)c["active"])grid.Rows[i].Cells[0].Tag=c["id"];
             }
             foreach(Dictionary<string,object> copy in copies) {
                 bool found=false;foreach(DataGridViewRow row in grid.Rows)if(row.Tag as string==(string)copy["file"])found=true;

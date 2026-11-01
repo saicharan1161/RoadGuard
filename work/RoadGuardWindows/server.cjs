@@ -19,15 +19,17 @@ class PinnedAgent extends https.Agent {
   constructor(pin) { super({keepAlive:true,maxSockets:6,maxFreeSockets:2,timeout:60000}); this.pin=pin; }
   createConnection(options,callback) {
     const socket=tls.connect({...options,rejectUnauthorized:false,minVersion:'TLSv1.2'});
+    const handshakeTimer=setTimeout(()=>socket.destroy(Error('Car TLS handshake timed out')),12000);
+    socket.once('close',()=>clearTimeout(handshakeTimer));
     let done=false;
     const finish=(error,result)=>{if(!done){done=true;callback(error,result);}};
     socket.once('secureConnect',()=>{
-      socket.setTimeout(0);
+      clearTimeout(handshakeTimer);
+      socket.setNoDelay(true);
       if(!safeEqual(hash(socket.getPeerCertificate().raw),this.pin)) { const e=Error('Car certificate changed; pair again');e.code='ROADGUARD_PIN_CHANGED'; finish(e);socket.destroy(); }
       else finish(null,socket);
     });
     socket.once('error',e=>finish(e));
-    socket.setTimeout(12000,()=>socket.destroy(Error('Car connection timed out')));
     return undefined;
   }
 }
@@ -75,7 +77,7 @@ function allowed(address) {
   const a=ip.split('.').map(Number);
   return a[0]===10 || a[0]===192&&a[1]===168 || a[0]===172&&a[1]>=16&&a[1]<=31 || a[0]===100&&a[1]>=64&&a[1]<=127;
 }
-async function start(dataDir) {
+async function start(dataDir,pollIntervalMs=15000) {
   const configFile=path.join(dataDir,'config.json');
   const config=JSON.parse(fs.readFileSync(configFile));
   const cert=fs.readFileSync(path.join(dataDir,'server.cer'));
@@ -115,17 +117,19 @@ async function start(dataDir) {
     pollFlight=pollOnce();
     try {await pollFlight;} finally {pollFlight=null;}
   }
-  async function backup() {
+  async function backup(refresh=true,selectedId=null) {
     if(busyBackup||!config.car)return;
-    if(activeLive>0){backupMessage='Backup paused to prioritize live video; resumes automatically if enabled';return;}
+    if(activeLive>0&&!selectedId){backupMessage='Backup paused to prioritize live video; resumes automatically if enabled';return;}
     busyBackup=true;
     try {
-      await poll(); if(lastError)throw Error(lastError);
+      if(refresh)await poll(); if(lastError)throw Error(lastError);
       const car={...config.car};const dir=path.join(backupRoot,car.pin.slice(0,16));fs.mkdirSync(dir,{recursive:true});
       let used=fs.readdirSync(backupRoot,{recursive:true}).reduce((n,f)=>{const p=path.join(backupRoot,f);return n+(fs.statSync(p).isFile()?fs.statSync(p).size:0);},0);
       const budget=(config.backupGB||10)*1024**3;
-      for(const clip of clips.filter(c=>!c.active)) {
-        if(activeLive>0){backupMessage='Backup paused to prioritize live video; partial copies retained';return;}
+      const selection=clips.filter(c=>!c.active&&(!selectedId||c.id===selectedId));
+      if(selectedId&&!selection.length)throw Error('Recording no longer available; refresh the list');
+      for(const clip of selection) {
+        if(activeLive>0&&!selectedId){backupMessage='Backup paused to prioritize live video; partial copies retained';return;}
         if(backups.some(x=>x.id===clip.id&&x.carPin===car.pin&&fs.existsSync(path.join(dataDir,x.file))))continue;
         if(!/^[a-f0-9]{64}$/.test(clip.id)||!Number.isSafeInteger(clip.bytes)||clip.bytes<=0)continue;
         const name=String(clip.name).replace(/[^a-zA-Z0-9_.-]/g,'_').slice(0,120);
@@ -138,7 +142,7 @@ async function start(dataDir) {
           const res=await carRequest(car,`/video?id=${clip.id}`,{'X-RoadGuard-Background-Backup':'1',...(offset?{Range:`bytes=${offset}-`}:{})});
           if(res.statusCode!==(offset?206:200) || offset && res.headers['content-range']!==`bytes ${offset}-${clip.bytes-1}/${clip.bytes}`) {res.destroy();throw Error('Backup source changed or range rejected');}
           let received=offset;
-          res.on('data',chunk=>{received+=chunk.length;if(activeLive>0)res.destroy(Error('Backup paused for live video; partial copy will resume'));else if(received>clip.bytes)res.destroy(Error('Video exceeds declared size'));});
+          res.on('data',chunk=>{received+=chunk.length;if(activeLive>0&&!selectedId)res.destroy(Error('Backup paused for live video; partial copy will resume'));else if(received>clip.bytes)res.destroy(Error('Video exceeds declared size'));});
           backupMessage=`Backing up ${name}`;
           await pipeline(res,fs.createWriteStream(partial,{flags:offset?'a':'w'}));
           if(received!==clip.bytes)throw Error('Backup interrupted; partial copy will resume');
@@ -148,7 +152,7 @@ async function start(dataDir) {
         backups.push({...clip,carPin:car.pin,file:path.relative(dataDir,final),savedAt:Date.now()});atomic(indexFile,backups);
         used+=clip.bytes-offset;audit('backup completed '+clip.id.slice(0,12));
       }
-      backupMessage='Completed clips backed up';
+      backupMessage=selectedId?'Selected recording saved on PC':'Completed clips backed up';
     } catch(e) {backupMessage=e.message;} finally {busyBackup=false;}
   }
   function reply(res,status,value) {res.writeHead(status,{'Content-Type':'application/json','Cache-Control':'no-store'});res.end(JSON.stringify(value));}
@@ -230,6 +234,12 @@ async function start(dataDir) {
           config.backupEnabled=data.enabled===true;config.backupGB=size;save();return reply(res,200,{ok:true});
         }
         if(route==='/admin/backup-now') {void backup();return reply(res,200,{ok:true});}
+        if(route==='/admin/save-clip') {
+          if(busyBackup)return reply(res,409,{error:'A transfer is already running'});
+          if(!/^[a-f0-9]{64}$/.test(data.id)||!clips.some(c=>c.id===data.id&&!c.active))
+            return reply(res,404,{error:'Select a completed recording on the car'});
+          void backup(true,data.id);return reply(res,202,{ok:true});
+        }
         if(route==='/admin/refresh') {
           await poll();
           const car=config.car;
@@ -316,8 +326,37 @@ async function start(dataDir) {
   let polling=false;
   // Restore the saved pairing immediately after a PC/server restart, without a UI click.
   void poll();
-  const timer=setInterval(async()=>{if(polling)return;polling=true;try{await poll();if(config.backupEnabled)await backup();}finally{polling=false;}},15000);
-  return {server,close:()=>{clearInterval(timer);if(mapBridge)mapBridge.close();closePhoneStreams();server.closeAllConnections();server.close();for(const agent of carAgents.values())agent.destroy();carAgents.clear();},pin};
+  // Hotspots can assign the car a different LAN address after ignition.
+  // Beacons are hints only. Authenticate the old certificate before transferring any token.
+  const discovery=require('node:dgram').createSocket({type:'udp4',reuseAddr:true});
+  let checkingAddress=false,nextAddressCheck=0,closed=false;
+  discovery.on('error',()=>{}); // TLS by saved address remains available if UDP is blocked.
+  discovery.on('message',async(message,peer)=>{
+    const car=config.car;
+    if(closed||checkingAddress||!car||!lastError||Date.now()<nextAddressCheck||
+       message.length!==15||message.toString('ascii')!=='ROADGUARD-CAR-1'||!allowed(peer.address))return;
+    if(car.host===peer.address||car.host===peer.address+':8943'||String(car.host).startsWith('100.'))return;
+    checkingAddress=true;nextAddressCheck=Date.now()+5000;
+    try {
+      const identity=await jsonFrom(await carRequest({host:peer.address,pin:car.pin},'/identity'));
+      if(closed||config.car!==car||identity.kind!=='car'||identity.app!==release.version)return;
+      if(pollFlight)await pollFlight;
+      if(closed||config.car!==car||!lastError)return;
+      config.car={...car,host:peer.address};save();await poll();
+    } catch { /* Ignore unrelated devices and failed pins. */ }
+    finally {checkingAddress=false;}
+  });
+  discovery.bind(8944,config.bind||'0.0.0.0');
+  const timer=setInterval(async()=>{
+    if(polling)return;
+    polling=true;
+    try {
+      await poll();
+      // A paced USB transfer may run for minutes. Keep polling during that transfer.
+      if(config.backupEnabled&&!lastError)void backup(false);
+    }finally{polling=false;}
+  },pollIntervalMs);
+  return {server,close:()=>{closed=true;clearInterval(timer);try{discovery.close();}catch{}if(mapBridge)mapBridge.close();closePhoneStreams();server.closeAllConnections();server.close();for(const agent of carAgents.values())agent.destroy();carAgents.clear();},pin};
 }
 module.exports={start,endpoint,allowed,hash,safeEqual,carRequest};
 if(require.main===module)start(process.argv[2]||path.join(process.env.ProgramData,'RoadGuard')).catch(e=>{console.error(e.message);process.exit(1);});

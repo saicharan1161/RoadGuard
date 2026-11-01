@@ -29,9 +29,11 @@ public final class LiveVideoHub {
     public synchronized void frame(byte[] data,long ptsUs,boolean key) throws IOException {
         if(viewers.isEmpty() || format==null) return;
         byte[] nal=annexB(data);
-        ByteArrayOutputStream bytes=new ByteArrayOutputStream(nal.length+12); DataOutputStream out=new DataOutputStream(bytes);
-        out.writeLong(ptsUs); out.writeInt(key?1:0); out.write(nal);
-        byte[] packet=packet(2,bytes.toByteArray());
+        if(nal.length>MAX_PACKET-12) throw new IOException("AVC packet too large");
+        // One immutable packet can be shared by both viewers until their writes complete.
+        byte[] packet=new byte[20+nal.length];
+        java.nio.ByteBuffer.wrap(packet).putInt(2).putInt(nal.length+12)
+                .putLong(ptsUs).putInt(key?1:0).put(nal);
         for(Viewer v:viewers) v.offer(packet,key,format,ptsUs);
     }
     public static byte[] annexB(byte[] data) throws IOException {

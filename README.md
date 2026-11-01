@@ -4,7 +4,9 @@
 
 RoadGuard records journeys to USB storage and lets paired phones and a Windows companion view live video, browse saved footage and see the car's available GPS location. It is built for drivers who want to reuse equipment they already own and keep control of their recordings.
 
-**Current development release · 0.7.0-alpha · Android 6.0+ · Windows companion**
+**Current development release · 0.7.1-alpha · Android 6.0+ · Windows companion**
+
+Version 0.7.1 improves reconnection and concurrent viewing. PC status checks continue during backups, paired LAN cars can be rediscovered after an address change, phone downloads retry temporary interruptions, and the Windows recording list offers a selected-video save action. Install matching car, phone and Windows versions. See the [0.7.1 update guide](outputs/RoadGuard-0.7.1-Guide.md).
 
 Read the [complete feature and architecture guide](docs/FEATURES.md) for automatic hardware selection, Android-version behavior, every application module, operating limits and troubleshooting.
 

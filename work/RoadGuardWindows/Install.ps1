@@ -49,6 +49,9 @@ try {
     if(-not(Get-NetFirewallRule -DisplayName 'RoadGuard private clients' -ErrorAction SilentlyContinue)) {
         New-NetFirewallRule -DisplayName 'RoadGuard private clients' -Direction Inbound -Action Allow -Protocol TCP -LocalPort 8944 -RemoteAddress LocalSubnet,100.64.0.0/10 -Program (Join-Path $installDir 'node.exe') | Out-Null
     }
+    if(-not(Get-NetFirewallRule -DisplayName 'RoadGuard LAN discovery' -ErrorAction SilentlyContinue)) {
+        New-NetFirewallRule -DisplayName 'RoadGuard LAN discovery' -Direction Inbound -Action Allow -Protocol UDP -LocalPort 8944 -RemoteAddress LocalSubnet -Program (Join-Path $installDir 'node.exe') | Out-Null
+    }
     $desktop=[Environment]::GetFolderPath('Desktop')
     $shortcut=(New-Object -ComObject WScript.Shell).CreateShortcut((Join-Path $desktop 'RoadGuard.lnk'))
     $shortcut.TargetPath=Join-Path $installDir 'RoadGuardDashboard.exe';$shortcut.Save()

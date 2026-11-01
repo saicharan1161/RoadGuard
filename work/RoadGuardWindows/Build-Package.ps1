@@ -35,6 +35,7 @@ Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'live-map') -Destination $source
 Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'Timeline.cs') -Destination $source
 Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'TimelineHarness.cs') -Destination $source
 Copy-Item -LiteralPath (Join-Path $PSScriptRoot '../../outputs/RoadGuard-0.7.0-Guide.md') -Destination $stage
+Copy-Item -LiteralPath (Join-Path $PSScriptRoot '../../outputs/RoadGuard-0.7.1-Guide.md') -Destination $stage
 $out=Join-Path $PSScriptRoot "../../outputs/RoadGuard-Windows-$($release.version).zip"
 Compress-Archive -Path (Join-Path $stage '*') -DestinationPath $out -Force
 Copy-Item -LiteralPath $apk -Destination (Join-Path $PSScriptRoot "../../outputs/RoadGuardAI-$($release.version).apk") -Force

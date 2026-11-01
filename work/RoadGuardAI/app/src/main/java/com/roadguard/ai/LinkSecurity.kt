@@ -20,7 +20,17 @@ object LinkSecurity {
         if(pinnedFactories.size>=8)pinnedFactories.remove(pinnedFactories.keys.first())
         pinnedFactories[pin]=next;return next
     }
-    fun hash(bytes: ByteArray): String = MessageDigest.getInstance("SHA-256").digest(bytes).joinToString("") { "%02x".format(it) }
+    fun hash(bytes: ByteArray): String {
+        val digest=MessageDigest.getInstance("SHA-256").digest(bytes)
+        val hex="0123456789abcdef"
+        val result=CharArray(digest.size*2)
+        for(i in digest.indices) {
+            val value=digest[i].toInt() and 255
+            result[2*i]=hex[value ushr 4]
+            result[2*i+1]=hex[value and 15]
+        }
+        return String(result)
+    }
     fun secret(): String = ByteArray(32).also { SecureRandom().nextBytes(it) }.joinToString("") { "%02x".format(it) }
     @Synchronized fun identity(): Pair<SSLContext, String> {
         val store = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }

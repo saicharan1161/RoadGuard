@@ -1,6 +1,6 @@
 # RoadGuard feature and architecture guide
 
-This guide describes the checked-in **0.7.0-alpha** implementation. It covers the car application, phone viewer and Windows companion. For installation steps, start with the [README](../README.md) and [parked-test guide](../outputs/RoadGuard-0.7.0-Guide.md).
+This guide describes the **0.7.0-alpha** feature baseline. The current **0.7.1-alpha** connection changes are described in the [update guide](../outputs/RoadGuard-0.7.1-Guide.md). It covers the car application, phone viewer and Windows companion. For installation steps, start with the [README](../README.md) and [parked-test guide](../outputs/RoadGuard-0.7.0-Guide.md).
 
 ## Automatic hardware and version selection
 

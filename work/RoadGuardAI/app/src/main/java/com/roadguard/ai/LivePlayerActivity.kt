@@ -40,6 +40,8 @@ class LivePlayerActivity:Activity(),SurfaceHolder.Callback {
     private var height=480
     private var resumed=false
     private var readySurface:Surface?=null
+    @Volatile private var advertisedCar:String?=null
+    private var presence:LocalDiscovery?=null
     private val handler=Handler(Looper.getMainLooper())
     @Volatile private var lastFrameAt=0L
     @Volatile private var streamConnected=false
@@ -120,10 +122,12 @@ class LivePlayerActivity:Activity(),SurfaceHolder.Callback {
                     if(prefs.getString("pin",null)==null || prefs.getString("token",null)==null) {
                         status("Not paired. Tap BACK, then scan the car QR or enter its code."); break
                     }
+                    if(failures>0)advertisedCar?.let { ip ->
+                        try {PhoneRoutes.recoverCarAddress(this,ip)} catch(_:Exception) { /* Unverified beacon. */ }
+                    }
                     c=PhoneRoutes.get(this,"/live.avc")
                     connection=c
                     if(c.responseCode==401) {
-                        prefs.edit().remove("pin").remove("token").apply()
                         status("Pairing expired or revoked. Tap BACK and pair again."); break
                     }
                     if(c.responseCode in arrayOf(429,502,503,504))throw java.io.IOException("Car video temporarily unavailable (${c.responseCode})")
@@ -228,7 +232,14 @@ class LivePlayerActivity:Activity(),SurfaceHolder.Callback {
         }
     }
     private fun stopVideo() { generation.incrementAndGet(); val old=connection; connection=null; if(old!=null) Thread { old.disconnect() }.start() }
-    override fun onResume() { super.onResume(); resumed=true; readySurface?.let { startVideo(it) }; handler.post(freshness); immersive() }
-    override fun onPause() { resumed=false; stopVideo(); handler.removeCallbacks(freshness); super.onPause() }
+    override fun onResume() {
+        super.onResume(); resumed=true
+        presence=LocalDiscovery(this,false){ip->advertisedCar=ip}.also { it.start() }
+        readySurface?.let { startVideo(it) }; handler.post(freshness); immersive()
+    }
+    override fun onPause() {
+        resumed=false; presence?.close();presence=null;advertisedCar=null
+        stopVideo(); handler.removeCallbacks(freshness); super.onPause()
+    }
     override fun onDestroy() { stopVideo(); handler.removeCallbacksAndMessages(null); executor.shutdownNow();gpsWorker.shutdownNow(); super.onDestroy() }
 }

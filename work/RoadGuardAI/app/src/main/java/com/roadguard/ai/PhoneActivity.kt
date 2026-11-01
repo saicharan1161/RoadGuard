@@ -151,10 +151,11 @@ class PhoneActivity : AppCompatActivity() {
         var attempts=0
         while(true) {
             check(resumed && !isDestroyed) { "Viewer is not active" }
-            val c=PhoneRoutes.get(this,path)
+            var c:javax.net.ssl.HttpsURLConnection?=null
             try {
+                c=PhoneRoutes.get(this,path)
                 val status=c.responseCode
-                if(status==401) { prefs.edit().remove("token").remove("pin").apply(); error("Pairing revoked. Scan a new QR on car") }
+                if(status==401) error("This endpoint rejected the pairing. Check the car/server and pair again if access was revoked.")
                 if(status==503 || status==502 || status==504) throw java.io.IOException("Car temporarily busy ($status)")
                 check(status==200) { "Car returned $status. Open Connect phone and check matching APK versions" }
                 return JSONObject(c.inputStream.bufferedReader().use { it.readText() })
@@ -162,9 +163,9 @@ class PhoneActivity : AppCompatActivity() {
                 val delay=ConnectionRecovery.delayMillis(++attempts)
                 if(!ConnectionRecovery.temporary(e) || delay<0 || !resumed) throw e
                 message("Recovering connection — retry $attempts/3 in ${delay/1000}s. Recording on the car is not restarted.")
-                c.disconnect()
+                c?.disconnect()
                 Thread.sleep(delay)
-            } finally { c.disconnect() }
+            } finally { c?.disconnect() }
         }
     }
     private fun codePair() {
@@ -347,9 +348,12 @@ class PhoneActivity : AppCompatActivity() {
                         var count=if(resume) output.channel.size() else 0L
                         require(count<=expected) { "Partial file is larger than the original video" }
                         output.channel.position(count)
-                        if(count<expected) {
-                            val c=PhoneRoutes.get(this,"/video?id=${entry.getString("id")}",if(count>0) mapOf("Range" to "bytes=$count-") else emptyMap())
+                        var attempts=0
+                        while(count<expected && !cancelDownload.get()) {
+                            var c:javax.net.ssl.HttpsURLConnection?=null
                             try {
+                                c=PhoneRoutes.get(this,"/video?id=${entry.getString("id")}",if(count>0) mapOf("Range" to "bytes=$count-") else emptyMap())
+                                if(c.responseCode in listOf(502,503,504))throw java.io.IOException("Car temporarily unavailable")
                                 check(c.responseCode==if(count>0) 206 else 200) { "Video unavailable or resume unsupported" }
                                 if(count>0)check(c.getHeaderField("Content-Range")=="bytes $count-${expected-1}/$expected") { "Resume offset rejected; original file may have changed" }
                                 var updated=0L
@@ -357,9 +361,14 @@ class PhoneActivity : AppCompatActivity() {
                                     val buffer=ByteArray(64*1024)
                                     while(true) {
                                         check(!cancelDownload.get()) { "Download paused; use Resume interrupted download" }
-                                        val n=input.read(buffer); if(n<0) break
+                                        val n=input.read(buffer)
+                                        if(n<0) {
+                                            if(count!=expected)throw java.io.EOFException("Incomplete transfer")
+                                            break
+                                        }
                                         check(count+n<=expected) { "Source size changed" }
-                                        output.write(buffer,0,n); count+=n
+                                        try {output.write(buffer,0,n)} catch(e:java.io.IOException) {throw IllegalStateException("Cannot write to the download destination",e)}
+                                        count+=n
                                         if(SystemClock.elapsedRealtime()-updated>1000) {
                                             val progress="Saving ${entry.getString("name")}\n${count*100/expected.coerceAtLeast(1)}% · Keep both devices connected"
                                             runOnUiThread { downloadStatus.text=progress }
@@ -367,7 +376,13 @@ class PhoneActivity : AppCompatActivity() {
                                         }
                                     }
                                 }
-                            } finally { c.disconnect() }
+                            } catch(e:java.io.IOException) {
+                                val delay=ConnectionRecovery.delayMillis(++attempts)
+                                if(cancelDownload.get()||isDestroyed||delay<0||!ConnectionRecovery.temporary(e))throw e
+                                c?.disconnect()
+                                runOnUiThread { downloadStatus.text="Connection interrupted. Resuming at $count bytes (attempt $attempts/3)…" }
+                                Thread.sleep(delay)
+                            } finally { c?.disconnect() }
                         }
                         output.channel.force(true)
                         check(count==expected) { "Download interrupted; tap Resume interrupted download" }
@@ -451,15 +466,11 @@ class PhoneActivity : AppCompatActivity() {
         val now=SystemClock.elapsedRealtime()
         if(now-(probeTimes[ip] ?: -10000L)<10000L) return
         probeTimes[ip]=now
-        if(!recoveryBlocked && pin!=null && prefs.getString("token",null)!=null) task {
-            val c=LinkSecurity.connect(ip,"/identity",pin)
-            try {
-                check(c.responseCode==200)
-                val data=JSONObject(c.inputStream.bufferedReader().use { it.readText() })
-                check(data.optString("app")==version) { "Install RoadGuard $version on both devices" }
-                prefs.edit().putString("host",ip).apply()
+        if(pin!=null && prefs.getString("host",null)!=ip && prefs.getString("token",null)!=null) task {
+            if(try {PhoneRoutes.recoverCarAddress(this,ip)} catch(_:Exception) {false}) {
+                recoveryBlocked=false
                 runOnUiThread { address.setText(ip); refresh() }
-            } finally { c.disconnect() }
+            }
         }
     }
     private fun stopDiscovery() { discovery?.let { try { (getSystemService(NSD_SERVICE) as NsdManager).stopServiceDiscovery(it) } catch(_:Exception) {} }; discovery=null }

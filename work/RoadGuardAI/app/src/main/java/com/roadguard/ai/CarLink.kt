@@ -50,7 +50,9 @@ class CarLink(private val context: Context, private val frame: () -> ByteArray?,
         // Bound workers/sockets on the 1 GB head unit, including unauthenticated requests.
         setAsyncRunner(object : AsyncRunner {
             private val clients=java.util.Collections.newSetFromMap(java.util.concurrent.ConcurrentHashMap<ClientHandler,Boolean>())
-            private val pool=java.util.concurrent.ThreadPoolExecutor(4,4,0L,java.util.concurrent.TimeUnit.MILLISECONDS,java.util.concurrent.ArrayBlockingQueue<Runnable>(4))
+            // Each TLS keep-alive or live stream occupies a NanoHTTPD worker.
+            // Start new workers on demand so both viewers, a transfer and control requests can coexist.
+            private val pool=java.util.concurrent.ThreadPoolExecutor(0,8,15L,java.util.concurrent.TimeUnit.SECONDS,java.util.concurrent.SynchronousQueue<Runnable>())
             override fun exec(client:ClientHandler) {
                 clients.add(client)
                 try { pool.execute(client) } catch(_:java.util.concurrent.RejectedExecutionException) { clients.remove(client); client.close() }
