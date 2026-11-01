@@ -1,0 +1,20 @@
+RoadGuard
+Copyright 2026 RoadGuard contributors
+
+Original RoadGuard code is licensed under Apache License 2.0, supplied in LICENSE.
+Third-party source, assets and modifications to those components remain subject
+to their applicable licenses. This notice does not replace their existing terms.
+
+AndroidUSBCamera / AUSBC-derived modules include copyright notices for Jiangdg
+and other upstream authors. Preserve their Apache-2.0 headers and notices.
+
+Bundled native source includes libusb, libuvc, libjpeg-turbo and RapidJSON.
+Their license and copyright files are retained within work/RoadGuardAI/libuvc.
+libusb includes LGPL-2.1 terms. Consult each component's supplied notices.
+
+Leaflet's license is supplied alongside the map assets. Apache Commons Math's
+license and notices are in the Android app assets/notices directory.
+Additional runtime attribution is in work/RoadGuardWindows/THIRD-PARTY.md.
+
+Changes in this RoadGuard development tree include recording, recovery, live
+transport, image adjustment, timestamp rendering, storage policies and viewers.

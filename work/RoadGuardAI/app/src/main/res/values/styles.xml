@@ -1,0 +1,9 @@
+<resources>
+    <style name="Theme.RoadGuard" parent="Theme.MaterialComponents.DayNight.NoActionBar">
+        <item name="android:fontFamily">sans</item>
+        <item name="android:colorAccent">#32D583</item>
+        <item name="android:navigationBarColor">#07111F</item>
+        <item name="android:statusBarColor">#07111F</item>
+        <item name="android:windowLightStatusBar">false</item>
+    </style>
+</resources>

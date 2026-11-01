@@ -1,0 +1,8 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>RoadGuard • Live car map</title><link rel="stylesheet" href="leaflet.css"><link rel="stylesheet" href="map.css"></head>
+<body><header><div class="brand">ROADGUARD <span>LIVE MAP</span></div><div id="status" role="status">Waiting for car GPS…</div><div id="detail">No current position received.</div><div id="place"></div>
+<nav><button id="follow">Follow car: ON</button><button id="refresh">Refresh GPS</button></nav></header>
+<main id="map" aria-label="Car location map"><div id="waiting">Waiting for a GPS position.<br>The map will appear automatically.</div></main>
+<footer><span id="tiles">Map tiles: OpenStreetMap. Loading tiles shares your IP and viewed area with its service.</span><br>Accuracy is an estimate, not a guarantee. No movement is invented between GPS fixes.</footer>
+<script src="leaflet.js"></script><script src="map-state.js"></script><script src="map.js"></script></body></html>

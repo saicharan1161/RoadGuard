@@ -1,0 +1,28 @@
+plugins {
+    id 'com.android.application' version '8.10.1' apply false
+    id 'com.android.library' version '8.10.1' apply false
+    id 'org.jetbrains.kotlin.android' version '2.2.10' apply false
+}
+
+ext {
+    def releaseInfo = new groovy.json.JsonSlurper().parse(file('release.json'))
+    versionNameString = releaseInfo.version
+    versionCode = releaseInfo.code
+    versionCompiler = 36
+    versionTarget = 35
+    minSdkVersion = 23
+    javaSourceCompatibility = JavaVersion.VERSION_1_8
+    javaTargetCompatibility = JavaVersion.VERSION_1_8
+    androidXVersion = '1.7.1'
+    ndkVersion = '28.1.13356709'
+    kotlinCoreVersion = '1.16.0'
+    kotlinCoroutines = '1.10.2'
+    coreKtx = '1.16.0'
+    materialVersion = '1.12.0'
+    constraintlayoutVersion = '2.2.1'
+    lifecycle_version = '2.9.1'
+}
+
+tasks.register('clean', Delete) {
+    delete rootProject.layout.buildDirectory
+}

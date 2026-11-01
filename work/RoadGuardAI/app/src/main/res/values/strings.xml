@@ -1,0 +1,4 @@
+<resources>
+    <string name="app_name">RoadGuard AI</string>
+    <string name="notification_channel">RoadGuard recording service</string>
+</resources>
